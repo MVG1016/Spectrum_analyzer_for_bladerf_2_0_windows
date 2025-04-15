@@ -17,25 +17,34 @@ class SpectrumAnalyzer(QMainWindow):
 
         # --- Параметры ---
         self.START_FREQ = 100e6
-        self.END_FREQ = 6000e6
-        self.SPAN = 10e6
-        self.STEP = 5e6
+        self.END_FREQ = 5700e6
+        self.SPAN = 20e6
+        self.STEP = 10e6
         self.SAMPLE_RATE = 40e6
-        self.NUM_SAMPLES = 8192  # Увеличено для лучшего разрешения
+        self.NUM_SAMPLES = 8192
         self.GAIN = 16
         self.AVG_COUNT = 5
-        self.WINDOW_TYPE = 'hann'  # Выбор окна: 'hann', 'hamming', 'blackman'
+        self.WINDOW_TYPE = 'hann'
 
-        # --- Калибровочные коэффициенты ---
-        self.FREQ_OFFSET = 0  # Определяется экспериментально
-        self.POWER_OFFSET = 0  # Определяется по эталонному сигналу
+        # --- Таблица калибровки частоты ---
+        self.calibration_table = {
+            100e6: 0,
+            500e6: 0,
+            1000e6: 0,
+            2000e6: 0,
+            3000e6: 0,
+            5000e6: 0,
+        }
+
+        # --- Калибровка мощности ---
+        self.POWER_OFFSET = 0  # Можно откалибровать по генератору
 
         # --- Инициализация SDR ---
         self.init_sdr()
 
         # --- Оконная функция ---
         self.window = self.get_window(self.WINDOW_TYPE)
-        self.window_correction = np.mean(self.window ** 2)  # Поправка на потери в окне
+        self.window_correction = np.mean(self.window ** 2)
 
         # --- GUI ---
         self.init_ui()
@@ -43,7 +52,7 @@ class SpectrumAnalyzer(QMainWindow):
         # --- Таймер обновления ---
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_spectrum)
-        self.timer.start(100)  # Обновление каждые 100 мс
+        self.timer.start(100)
 
         # --- Данные ---
         self.center_freqs = np.arange(self.START_FREQ, self.END_FREQ, self.STEP)
@@ -51,7 +60,6 @@ class SpectrumAnalyzer(QMainWindow):
         self.full_freqs = np.zeros(len(self.center_freqs) * self.NUM_SAMPLES)
 
     def get_window(self, window_type):
-        """Возвращает выбранную оконную функцию"""
         if window_type == 'hann':
             return np.hanning(self.NUM_SAMPLES)
         elif window_type == 'hamming':
@@ -59,10 +67,9 @@ class SpectrumAnalyzer(QMainWindow):
         elif window_type == 'blackman':
             return np.blackman(self.NUM_SAMPLES)
         else:
-            return np.ones(self.NUM_SAMPLES)  # Прямоугольное окно
+            return np.ones(self.NUM_SAMPLES)
 
     def init_sdr(self):
-        """Инициализация параметров SDR"""
         self.rx.sample_rate = int(self.SAMPLE_RATE)
         self.rx.bandwidth = int(self.SPAN)
         self.rx.gain_mode = _bladerf.GainMode.Manual
@@ -79,7 +86,6 @@ class SpectrumAnalyzer(QMainWindow):
         )
 
     def init_ui(self):
-        """Инициализация интерфейса"""
         self.setWindowTitle(f"BladeRF 2.0 Spectrum Analyzer | Window: {self.WINDOW_TYPE}")
         self.setGeometry(100, 100, 1000, 600)
 
@@ -91,11 +97,9 @@ class SpectrumAnalyzer(QMainWindow):
 
         self.spectrum_curve = self.graphWidget.plot(pen='y')
 
-        # Маркер максимума
         self.max_marker = pg.ScatterPlotItem(size=15, pen=pg.mkPen('r'), brush=pg.mkBrush('r'))
         self.graphWidget.addItem(self.max_marker)
 
-        # Текст с параметрами максимума
         self.max_text = pg.TextItem(anchor=(0.5, 1.5), color='w', fill='k')
         self.graphWidget.addItem(self.max_text)
 
@@ -106,25 +110,34 @@ class SpectrumAnalyzer(QMainWindow):
         self.setCentralWidget(central_widget)
 
     def calculate_spectrum(self, samples):
-        """Вычисление спектра с учетом оконной функции"""
-        # Применение окна
         windowed_samples = samples * self.window
-
-        # FFT
         spectrum = np.fft.fftshift(np.fft.fft(windowed_samples))
-
-        # Расчет мощности с поправкой на окно
         power = (np.abs(spectrum) / (len(samples) * np.sqrt(self.window_correction))) ** 2
         power_db = 10 * np.log10(power + 1e-12) + self.POWER_OFFSET
-
         return power_db
 
+    def get_interpolated_offset(self, freq):
+        freqs = np.array(sorted(self.calibration_table.keys()))
+        offsets = np.array([self.calibration_table[f] for f in freqs])
+        if freq <= freqs[0]:
+            return offsets[0]
+        elif freq >= freqs[-1]:
+            return offsets[-1]
+        else:
+            return np.interp(freq, freqs, offsets)
+
     def update_spectrum(self):
-        """Обновление спектра"""
         scan_start = time.time()
 
         for i, freq in enumerate(self.center_freqs):
-            self.rx.frequency = int(freq + self.FREQ_OFFSET)
+            offset = self.get_interpolated_offset(freq)
+            freq_to_set = freq + offset
+
+            if not (70e6 <= freq_to_set <= 6000e6):
+                print(f"[!] Частота {freq_to_set/1e6:.2f} МГц вне диапазона BladeRF. Пропускаем.")
+                continue
+
+            self.rx.frequency = int(freq_to_set)
             time.sleep(0.01)
 
             buf = bytearray(self.NUM_SAMPLES * 4)
@@ -135,30 +148,25 @@ class SpectrumAnalyzer(QMainWindow):
 
             power_db = self.calculate_spectrum(samples)
 
-            # Обновление данных
             start_idx = i * self.NUM_SAMPLES
             end_idx = (i + 1) * self.NUM_SAMPLES
             self.full_freqs[start_idx:end_idx] = np.fft.fftshift(
                 np.fft.fftfreq(len(samples), d=1 / self.SAMPLE_RATE)) + freq
             self.full_spectrum[start_idx:end_idx] = power_db
 
-        # Поиск максимума
         max_idx = np.argmax(self.full_spectrum)
         max_freq = self.full_freqs[max_idx] / 1e6
         max_power = self.full_spectrum[max_idx]
 
-        # Обновление графика
         self.spectrum_curve.setData(self.full_freqs / 1e6, self.full_spectrum)
         self.max_marker.setData([max_freq], [max_power])
         self.max_text.setText(f"Peak: {max_power:.1f} dBm @ {max_freq:.2f} MHz")
         self.max_text.setPos(max_freq, max_power)
 
-        # Вывод времени сканирования
-        scan_time = (time.time() - scan_start) * 1
+        scan_time = (time.time() - scan_start)
         print(f"Scan time: {scan_time:.1f} s | Peak: {max_power:.1f} dBm @ {max_freq:.2f} MHz")
 
     def closeEvent(self, event):
-        """Остановка SDR при закрытии"""
         self.rx.enable = False
         self.sdr.close()
         event.accept()
