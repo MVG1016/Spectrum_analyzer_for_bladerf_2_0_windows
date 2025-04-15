@@ -16,13 +16,13 @@ class SpectrumAnalyzer(QMainWindow):
         self.rx = self.sdr.Channel(_bladerf.CHANNEL_RX(0))
 
         # --- Параметры ---
-        self.START_FREQ = 300e6
+        self.START_FREQ = 100e6
         self.END_FREQ = 6000e6
-        self.SPAN = 30e6
-        self.STEP = 20e6
+        self.SPAN = 10e6
+        self.STEP = 5e6
         self.SAMPLE_RATE = 40e6
         self.NUM_SAMPLES = 8192  # Увеличено для лучшего разрешения
-        self.GAIN = 18
+        self.GAIN = 16
         self.AVG_COUNT = 5
         self.WINDOW_TYPE = 'hann'  # Выбор окна: 'hann', 'hamming', 'blackman'
 
