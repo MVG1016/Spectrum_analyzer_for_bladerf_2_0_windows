@@ -22,22 +22,20 @@ class SpectrumAnalyzer(QMainWindow):
         self.STEP = 10e6
         self.SAMPLE_RATE = 40e6
         self.NUM_SAMPLES = 8192
-        self.GAIN = 16
-        self.AVG_COUNT = 5
+        self.GAIN = 18
         self.WINDOW_TYPE = 'hann'
 
-        # --- Таблица калибровки частоты ---
+        # --- Калибровочная таблица ---
         self.calibration_table = {
-            100e6: 0,
-            500e6: 0,
-            1000e6: 0,
-            2000e6: 0,
-            3000e6: 0,
-            5000e6: 0,
+            100e6:  {"freq_offset": 300e6,      "power_offset": 8},
+            500e6:  {"freq_offset": 300e6,      "power_offset": 8},
+            1000e6: {"freq_offset": 300e6,  "power_offset": 8},
+            2000e6: {"freq_offset": 300e6,    "power_offset": 8},
+            3000e6: {"freq_offset": 300e6,    "power_offset": 8},
+            4000e6: {"freq_offset": 300e6,  "power_offset": 7},
+            5000e6: {"freq_offset": 300e6,    "power_offset": 0},
+            5800e6: {"freq_offset": 300e6,    "power_offset": 0},
         }
-
-        # --- Калибровка мощности ---
-        self.POWER_OFFSET = 0  # Можно откалибровать по генератору
 
         # --- Инициализация SDR ---
         self.init_sdr()
@@ -49,7 +47,7 @@ class SpectrumAnalyzer(QMainWindow):
         # --- GUI ---
         self.init_ui()
 
-        # --- Таймер обновления ---
+        # --- Таймер ---
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_spectrum)
         self.timer.start(100)
@@ -113,31 +111,22 @@ class SpectrumAnalyzer(QMainWindow):
         windowed_samples = samples * self.window
         spectrum = np.fft.fftshift(np.fft.fft(windowed_samples))
         power = (np.abs(spectrum) / (len(samples) * np.sqrt(self.window_correction))) ** 2
-        power_db = 10 * np.log10(power + 1e-12) + self.POWER_OFFSET
+        power_db = 10 * np.log10(power + 1e-12)
         return power_db
 
-    def get_interpolated_offset(self, freq):
-        freqs = np.array(sorted(self.calibration_table.keys()))
-        offsets = np.array([self.calibration_table[f] for f in freqs])
-        if freq <= freqs[0]:
-            return offsets[0]
-        elif freq >= freqs[-1]:
-            return offsets[-1]
-        else:
-            return np.interp(freq, freqs, offsets)
+    def get_calibration(self, freq):
+        closest_freq = min(self.calibration_table.keys(), key=lambda f: abs(f - freq))
+        return self.calibration_table[closest_freq]
 
     def update_spectrum(self):
         scan_start = time.time()
 
         for i, freq in enumerate(self.center_freqs):
-            offset = self.get_interpolated_offset(freq)
-            freq_to_set = freq + offset
+            cal = self.get_calibration(freq)
+            freq_offset = cal["freq_offset"]
+            power_offset = cal["power_offset"]
 
-            if not (70e6 <= freq_to_set <= 6000e6):
-                print(f"[!] Частота {freq_to_set/1e6:.2f} МГц вне диапазона BladeRF. Пропускаем.")
-                continue
-
-            self.rx.frequency = int(freq_to_set)
+            self.rx.frequency = int(freq + freq_offset)
             time.sleep(0.01)
 
             buf = bytearray(self.NUM_SAMPLES * 4)
@@ -147,6 +136,7 @@ class SpectrumAnalyzer(QMainWindow):
             samples = samples.view(np.complex64) / (2 ** 11)
 
             power_db = self.calculate_spectrum(samples)
+            power_db += power_offset
 
             start_idx = i * self.NUM_SAMPLES
             end_idx = (i + 1) * self.NUM_SAMPLES
@@ -164,7 +154,7 @@ class SpectrumAnalyzer(QMainWindow):
         self.max_text.setPos(max_freq, max_power)
 
         scan_time = (time.time() - scan_start)
-        print(f"Scan time: {scan_time:.1f} s | Peak: {max_power:.1f} dBm @ {max_freq:.2f} MHz")
+        print(f"Scan time: {scan_time:.2f} s | Peak: {max_power:.1f} dBm @ {max_freq:.2f} MHz")
 
     def closeEvent(self, event):
         self.rx.enable = False
