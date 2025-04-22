@@ -121,6 +121,7 @@ class SpectrumAnalyzer(QMainWindow):
         central_widget.setLayout(layout)
         self.setCentralWidget(central_widget)
 
+
     def calculate_spectrum(self, samples):
         windowed_samples = samples * self.window
         spectrum = np.fft.fftshift(np.fft.fft(windowed_samples))
