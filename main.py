@@ -27,12 +27,13 @@ class SpectrumAnalyzer(QMainWindow):
 
         # --- Калибровочная таблица ---
         self.calibration_table = {
-            100e6:  {"freq_offset": 300e6, "power_offset": 8},
-            500e6:  {"freq_offset": 300e6, "power_offset": 8},
-            1000e6: {"freq_offset": 300e6, "power_offset": 8},
-            2000e6: {"freq_offset": 300e6, "power_offset": 8},
-            3000e6: {"freq_offset": 300e6, "power_offset": 8},
-            4000e6: {"freq_offset": 300e6, "power_offset": 7},
+            100e6:  {"freq_offset": 300e6, "power_offset": 0},
+            500e6:  {"freq_offset": 300e6, "power_offset": 0},
+            1000e6: {"freq_offset": 300e6, "power_offset": 0},
+            2000e6: {"freq_offset": 300e6, "power_offset": 0},
+            2400e6: {"freq_offset": 300e6, "power_offset": 0},
+            3000e6: {"freq_offset": 300e6, "power_offset": 0},
+            4000e6: {"freq_offset": 300e6, "power_offset": 0},
             5000e6: {"freq_offset": 300e6, "power_offset": 0},
             5800e6: {"freq_offset": 300e6, "power_offset": 0},
         }
@@ -149,7 +150,7 @@ class SpectrumAnalyzer(QMainWindow):
             power_offset = cal["power_offset"]
 
             self.rx.frequency = int(freq + freq_offset)
-            time.sleep(0.01)
+            time.sleep(0.0001)
 
             buf = bytearray(self.NUM_SAMPLES * 4)
             self.sdr.sync_rx(buf, self.NUM_SAMPLES)
