@@ -1,10 +1,11 @@
 from bladerf import _bladerf
 import numpy as np
 import time
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPushButton, QHBoxLayout, QComboBox
+from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPushButton, QHBoxLayout, QComboBox, QTabWidget, QLineEdit, QLabel
 from PyQt5.QtCore import QTimer
 import pyqtgraph as pg
 import sys
+from PyQt5.QtGui import QDoubleValidator
 
 
 class SpectrumAnalyzer(QMainWindow):
@@ -14,9 +15,10 @@ class SpectrumAnalyzer(QMainWindow):
         # --- Конфигурация SDR ---
         self.sdr = _bladerf.BladeRF()
         self.rx = None  # Инициализируется позже в switch_rx_channel
+        self.tx = None  # Инициализируется позже в switch_tx_channel
 
         # --- Параметры ---
-        self.START_FREQ = 100e6
+        self.START_FREQ = 5000e6
         self.END_FREQ = 5700e6
         self.SPAN = 20e6
         self.STEP = 10e6
@@ -45,6 +47,7 @@ class SpectrumAnalyzer(QMainWindow):
         # --- GUI ---
         self.init_ui()
         self.switch_rx_channel(0)  # RX1 по умолчанию
+        self.switch_tx_channel(0)  # TX1 по умолчанию
 
         # --- Таймер ---
         self.timer = QTimer()
@@ -74,9 +77,15 @@ class SpectrumAnalyzer(QMainWindow):
         if self.rx is not None:
             self.rx.enable = False
         self.rx = self.sdr.Channel(_bladerf.CHANNEL_RX(index))
-        self.init_sdr()
+        self.init_rx_sdr()
 
-    def init_sdr(self):
+    def switch_tx_channel(self, index):
+        if self.tx is not None:
+            self.tx.enable = False
+        self.tx = self.sdr.Channel(_bladerf.CHANNEL_TX(index))
+        self.init_tx_sdr()
+
+    def init_rx_sdr(self):
         self.rx.sample_rate = int(self.SAMPLE_RATE)
         self.rx.bandwidth = int(self.SPAN)
         self.rx.gain_mode = _bladerf.GainMode.Manual
@@ -92,9 +101,39 @@ class SpectrumAnalyzer(QMainWindow):
             stream_timeout=3500
         )
 
+    def init_tx_sdr(self):
+        self.tx.sample_rate = int(self.SAMPLE_RATE)
+        self.tx.bandwidth = int(self.SPAN)
+        self.tx.gain_mode = _bladerf.GainMode.Manual
+        self.tx.gain = self.GAIN
+        self.tx.enable = True
+
+        self.sdr.sync_config(
+            layout=_bladerf.ChannelLayout.TX_X1,
+            fmt=_bladerf.Format.SC16_Q11,
+            num_buffers=16,
+            buffer_size=self.NUM_SAMPLES * 4,
+            num_transfers=8,
+            stream_timeout=3500
+        )
+
     def init_ui(self):
         self.setWindowTitle(f"BladeRF 2.0 Spectrum Analyzer | Window: {self.WINDOW_TYPE}")
         self.setGeometry(100, 100, 1000, 600)
+
+        self.tab_widget = QTabWidget()
+        self.setCentralWidget(self.tab_widget)
+
+        self.rx_tab = QWidget()
+        self.tx_tab = QWidget()
+        self.tab_widget.addTab(self.rx_tab, "Receive Channel")
+        self.tab_widget.addTab(self.tx_tab, "Transmit Channel")
+
+        self.init_rx_ui()
+        self.init_tx_ui()
+
+    def init_rx_ui(self):
+        layout = QVBoxLayout()
 
         self.graphWidget = pg.PlotWidget()
         self.graphWidget.setLabel('left', 'Power (dBm)')
@@ -127,12 +166,88 @@ class SpectrumAnalyzer(QMainWindow):
         buttons_layout.addWidget(self.scan_btn)
         buttons_layout.addWidget(self.rx_selector)
 
-        layout = QVBoxLayout()
         layout.addWidget(self.graphWidget)
         layout.addLayout(buttons_layout)
-        central_widget = QWidget()
-        central_widget.setLayout(layout)
-        self.setCentralWidget(central_widget)
+        self.rx_tab.setLayout(layout)
+
+    def init_tx_ui(self):
+        layout = QVBoxLayout()
+
+        # Кнопка для начала передачи
+        self.start_tx_btn = QPushButton("Start Transmission")
+        self.start_tx_btn.setCheckable(True)
+        self.start_tx_btn.clicked.connect(self.toggle_transmission)
+
+        # Поле для ввода частоты
+        self.tx_freq_label = QLabel("Frequency: 5000 MHz")
+        self.tx_freq_input = QLineEdit("5000")
+        self.tx_freq_input.setValidator(QDoubleValidator(0, 6000, 2))
+
+        # Поле для ввода мощности
+        self.tx_power_label = QLabel("Power: 10 dB")
+        self.tx_power_input = QLineEdit("10")
+        self.tx_power_input.setValidator(QDoubleValidator(0, 30, 1))
+
+        # Выпадающий список для выбора канала
+        self.tx_selector = QComboBox()
+        self.tx_selector.addItems(["TX1", "TX2"])
+        self.tx_selector.currentIndexChanged.connect(self.switch_tx_channel)
+
+        # Добавление элементов на интерфейс
+        layout.addWidget(self.start_tx_btn)
+        layout.addWidget(self.tx_freq_label)
+        layout.addWidget(self.tx_freq_input)
+        layout.addWidget(self.tx_power_label)
+        layout.addWidget(self.tx_power_input)
+        layout.addWidget(self.tx_selector)
+
+        self.tx_tab.setLayout(layout)
+
+    def set_tx_frequency(self):
+        try:
+            freq = float(self.tx_freq_input.text()) * 1e6  # преобразуем в Hz
+            self.tx.frequency = int(freq)
+            print(f"Set TX Frequency: {freq / 1e6} MHz")
+        except ValueError:
+            print("Invalid frequency input")
+
+    def set_tx_power(self):
+        try:
+            power = float(self.tx_power_input.text())  # дБ
+            self.tx.gain = power
+            print(f"Set TX Power: {power} dB")
+        except ValueError:
+            print("Invalid power input")
+
+    def start_transmission(self):
+        try:
+            freq = float(self.tx_freq_input.text()) * 1e6
+            power = float(self.tx_power_input.text())
+
+            self.tx.frequency = int(freq)
+            self.tx.gain = int(round(power))
+            self.tx.enable = True
+
+            # Пример генерации синуса на 1 МГц
+            t = np.arange(self.NUM_SAMPLES) / self.SAMPLE_RATE
+            tx_signal = 0.7 * np.exp(2j * np.pi * 1e6 * t)  # комплексный синус
+
+            # Преобразование в формат SC16 Q11
+            iq = np.empty(2 * len(tx_signal), dtype=np.int16)
+            iq[0::2] = np.clip(np.real(tx_signal) * (2 ** 11), -2048, 2047).astype(np.int16)
+            iq[1::2] = np.clip(np.imag(tx_signal) * (2 ** 11), -2048, 2047).astype(np.int16)
+
+            # Передача одного буфера
+            self.sdr.sync_tx(iq.tobytes(), len(tx_signal))
+
+            print(f"Started transmission at {freq / 1e6} MHz with {self.tx.gain} dB power")
+
+            self.tx_freq_label.setText(f"TX Frequency: {freq / 1e6} MHz")
+            self.tx_power_label.setText(f"TX Power: {self.tx.gain} dB")
+
+        except ValueError:
+            print("Invalid inputs for frequency or power.")
+            self.tx_freq_label.setText("Invalid frequency or power")
 
     def calculate_spectrum(self, samples):
         windowed_samples = samples * self.window
@@ -161,6 +276,30 @@ class SpectrumAnalyzer(QMainWindow):
         else:
             self.scan_btn.setText("Start Scan")
             self.timer.stop()
+
+    def toggle_transmission(self):
+        if self.start_tx_btn.isChecked():
+            try:
+                freq = float(self.tx_freq_input.text()) * 1e6
+                power = float(self.tx_power_input.text())
+
+                self.tx.frequency = int(freq)
+                self.tx.gain = int(round(power))
+                self.tx.enable = True
+
+                self.tx_freq_label.setText(f"TX Frequency: {freq / 1e6} MHz")
+                self.tx_power_label.setText(f"TX Power: {self.tx.gain} dB")
+                self.start_tx_btn.setText("Stop Transmission")
+
+                print(f"Started transmission at {freq / 1e6} MHz with {self.tx.gain} dB power")
+
+            except ValueError:
+                print("Invalid frequency or power input")
+                self.tx_freq_label.setText("Invalid frequency or power")
+        else:
+            self.tx.enable = False
+            self.start_tx_btn.setText("Start Transmission")
+            print("Transmission stopped")
 
     def update_spectrum(self):
         scan_start = time.time()
@@ -207,6 +346,8 @@ class SpectrumAnalyzer(QMainWindow):
     def closeEvent(self, event):
         if self.rx is not None:
             self.rx.enable = False
+        if self.tx is not None:
+            self.tx.enable = False
         self.sdr.close()
         event.accept()
 
