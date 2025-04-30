@@ -1,7 +1,7 @@
 from bladerf import _bladerf
 import numpy as np
 import time
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPushButton, QHBoxLayout
+from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPushButton, QHBoxLayout, QComboBox
 from PyQt5.QtCore import QTimer
 import pyqtgraph as pg
 import sys
@@ -13,7 +13,7 @@ class SpectrumAnalyzer(QMainWindow):
 
         # --- Конфигурация SDR ---
         self.sdr = _bladerf.BladeRF()
-        self.rx = self.sdr.Channel(_bladerf.CHANNEL_RX(0))
+        self.rx = None  # Инициализируется позже в switch_rx_channel
 
         # --- Параметры ---
         self.START_FREQ = 100e6
@@ -38,20 +38,17 @@ class SpectrumAnalyzer(QMainWindow):
             5800e6: {"freq_offset": 300e6, "power_offset": 0},
         }
 
-        # --- Инициализация SDR ---
-        self.init_sdr()
-
         # --- Оконная функция ---
         self.window = self.get_window(self.WINDOW_TYPE)
         self.window_correction = np.mean(self.window ** 2)
 
         # --- GUI ---
         self.init_ui()
+        self.switch_rx_channel(0)  # RX1 по умолчанию
 
         # --- Таймер ---
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_spectrum)
-        #self.timer.start(100)
 
         # --- Данные ---
         self.center_freqs = np.arange(self.START_FREQ, self.END_FREQ, self.STEP)
@@ -60,7 +57,7 @@ class SpectrumAnalyzer(QMainWindow):
 
         # --- Max Hold ---
         self.max_hold_enabled = False
-        self.max_hold_spectrum = np.full(len(self.center_freqs) * self.NUM_SAMPLES, -120.0)  # начальные значения
+        self.max_hold_spectrum = np.full(len(self.center_freqs) * self.NUM_SAMPLES, -120.0)
         self.max_hold_curve = self.graphWidget.plot(pen=pg.mkPen('c', style=pg.QtCore.Qt.DashLine))
 
     def get_window(self, window_type):
@@ -72,6 +69,12 @@ class SpectrumAnalyzer(QMainWindow):
             return np.blackman(self.NUM_SAMPLES)
         else:
             return np.ones(self.NUM_SAMPLES)
+
+    def switch_rx_channel(self, index):
+        if self.rx is not None:
+            self.rx.enable = False
+        self.rx = self.sdr.Channel(_bladerf.CHANNEL_RX(index))
+        self.init_sdr()
 
     def init_sdr(self):
         self.rx.sample_rate = int(self.SAMPLE_RATE)
@@ -107,27 +110,29 @@ class SpectrumAnalyzer(QMainWindow):
         self.max_text = pg.TextItem(anchor=(0.5, 1.5), color='w', fill='k')
         self.graphWidget.addItem(self.max_text)
 
-        # --- Кнопка включения/выключения Max Hold ---
         self.toggle_maxhold_btn = QPushButton("Max Hold: OFF")
         self.toggle_maxhold_btn.setCheckable(True)
         self.toggle_maxhold_btn.clicked.connect(self.toggle_max_hold)
 
-        # Кнопка Start/Stop Scan
         self.scan_btn = QPushButton("Start Scan")
         self.scan_btn.setCheckable(True)
         self.scan_btn.clicked.connect(self.toggle_scan)
 
+        self.rx_selector = QComboBox()
+        self.rx_selector.addItems(["RX1", "RX2"])
+        self.rx_selector.currentIndexChanged.connect(self.switch_rx_channel)
+
         buttons_layout = QHBoxLayout()
         buttons_layout.addWidget(self.toggle_maxhold_btn)
+        buttons_layout.addWidget(self.scan_btn)
+        buttons_layout.addWidget(self.rx_selector)
+
         layout = QVBoxLayout()
         layout.addWidget(self.graphWidget)
         layout.addLayout(buttons_layout)
         central_widget = QWidget()
         central_widget.setLayout(layout)
         self.setCentralWidget(central_widget)
-
-        buttons_layout.addWidget(self.toggle_maxhold_btn)
-        buttons_layout.addWidget(self.scan_btn)
 
     def calculate_spectrum(self, samples):
         windowed_samples = samples * self.window
@@ -146,7 +151,7 @@ class SpectrumAnalyzer(QMainWindow):
             self.toggle_maxhold_btn.setText("Max Hold: ON")
         else:
             self.toggle_maxhold_btn.setText("Max Hold: OFF")
-            self.max_hold_spectrum[:] = -120.0  # сброс
+            self.max_hold_spectrum[:] = -120.0
             self.max_hold_curve.setData([], [])
 
     def toggle_scan(self):
@@ -183,28 +188,25 @@ class SpectrumAnalyzer(QMainWindow):
                 np.fft.fftfreq(len(samples), d=1 / self.SAMPLE_RATE)) + freq
             self.full_spectrum[start_idx:end_idx] = power_db
 
-        # Обновление Max Hold, если включено
         if self.max_hold_enabled:
             self.max_hold_spectrum = np.maximum(self.max_hold_spectrum, self.full_spectrum)
             self.max_hold_curve.setData(self.full_freqs / 1e6, self.max_hold_spectrum)
 
-        # Поиск максимума
         max_idx = np.argmax(self.full_spectrum)
         max_freq = self.full_freqs[max_idx] / 1e6
         max_power = self.full_spectrum[max_idx]
 
-        # Обновление графика
         self.spectrum_curve.setData(self.full_freqs / 1e6, self.full_spectrum)
         self.max_marker.setData([max_freq], [max_power])
         self.max_text.setText(f"Peak: {max_power:.1f} dBm @ {max_freq:.2f} MHz")
         self.max_text.setPos(max_freq, max_power)
 
-        # Вывод времени сканирования
         scan_time = (time.time() - scan_start)
         print(f"Scan time: {scan_time:.2f} s | Peak: {max_power:.1f} dBm @ {max_freq:.2f} MHz")
 
     def closeEvent(self, event):
-        self.rx.enable = False
+        if self.rx is not None:
+            self.rx.enable = False
         self.sdr.close()
         event.accept()
 
