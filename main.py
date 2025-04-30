@@ -51,7 +51,7 @@ class SpectrumAnalyzer(QMainWindow):
         # --- Таймер ---
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_spectrum)
-        self.timer.start(100)
+        #self.timer.start(100)
 
         # --- Данные ---
         self.center_freqs = np.arange(self.START_FREQ, self.END_FREQ, self.STEP)
@@ -112,6 +112,11 @@ class SpectrumAnalyzer(QMainWindow):
         self.toggle_maxhold_btn.setCheckable(True)
         self.toggle_maxhold_btn.clicked.connect(self.toggle_max_hold)
 
+        # Кнопка Start/Stop Scan
+        self.scan_btn = QPushButton("Start Scan")
+        self.scan_btn.setCheckable(True)
+        self.scan_btn.clicked.connect(self.toggle_scan)
+
         buttons_layout = QHBoxLayout()
         buttons_layout.addWidget(self.toggle_maxhold_btn)
         layout = QVBoxLayout()
@@ -121,6 +126,8 @@ class SpectrumAnalyzer(QMainWindow):
         central_widget.setLayout(layout)
         self.setCentralWidget(central_widget)
 
+        buttons_layout.addWidget(self.toggle_maxhold_btn)
+        buttons_layout.addWidget(self.scan_btn)
 
     def calculate_spectrum(self, samples):
         windowed_samples = samples * self.window
@@ -141,6 +148,14 @@ class SpectrumAnalyzer(QMainWindow):
             self.toggle_maxhold_btn.setText("Max Hold: OFF")
             self.max_hold_spectrum[:] = -120.0  # сброс
             self.max_hold_curve.setData([], [])
+
+    def toggle_scan(self):
+        if self.scan_btn.isChecked():
+            self.scan_btn.setText("Stop Scan")
+            self.timer.start(100)
+        else:
+            self.scan_btn.setText("Start Scan")
+            self.timer.stop()
 
     def update_spectrum(self):
         scan_start = time.time()
