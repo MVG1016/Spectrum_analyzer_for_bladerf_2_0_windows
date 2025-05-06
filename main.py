@@ -7,6 +7,9 @@ import pyqtgraph as pg
 import sys
 from PyQt5.QtGui import QDoubleValidator
 from threading import Thread
+import sys
+import os
+from datetime import datetime
 
 
 class SpectrumAnalyzer(QMainWindow):
@@ -33,15 +36,15 @@ class SpectrumAnalyzer(QMainWindow):
 
         # --- Калибровочная таблица ---
         self.calibration_table = {
-            100e6:  {"freq_offset": 300e6, "power_offset": 0},
-            500e6:  {"freq_offset": 300e6, "power_offset": 0},
-            1000e6: {"freq_offset": 300e6, "power_offset": 0},
-            2000e6: {"freq_offset": 300e6, "power_offset": 0},
-            2400e6: {"freq_offset": 300e6, "power_offset": 0},
-            3000e6: {"freq_offset": 300e6, "power_offset": 0},
-            4000e6: {"freq_offset": 300e6, "power_offset": 0},
-            5000e6: {"freq_offset": 300e6, "power_offset": 0},
-            5800e6: {"freq_offset": 300e6, "power_offset": 0},
+            100e6:  {"freq_offset": 0e6, "power_offset": 0},
+            500e6:  {"freq_offset": 0e6, "power_offset": 0},
+            1000e6: {"freq_offset": 0e6, "power_offset": 0},
+            2000e6: {"freq_offset": 0e6, "power_offset": 0},
+            2400e6: {"freq_offset": 0e6, "power_offset": 0},
+            3000e6: {"freq_offset": 0e6, "power_offset": 0},
+            4000e6: {"freq_offset": 0e6, "power_offset": 0},
+            5000e6: {"freq_offset": 0e6, "power_offset": 0},
+            5800e6: {"freq_offset": 0e6, "power_offset": 0},
         }
 
         # --- Оконная функция ---
@@ -170,6 +173,58 @@ class SpectrumAnalyzer(QMainWindow):
         buttons_layout.addWidget(self.scan_btn)
         buttons_layout.addWidget(self.rx_selector)
 
+        params_layout = QHBoxLayout()
+
+        self.start_freq_input = QLineEdit(str(self.START_FREQ / 1e6))
+        self.start_freq_input.setValidator(QDoubleValidator(1, 6000, 2))
+        self.start_freq_input.setFixedWidth(80)
+
+        self.end_freq_input = QLineEdit(str(self.END_FREQ / 1e6))
+        self.end_freq_input.setValidator(QDoubleValidator(1, 6000, 2))
+        self.end_freq_input.setFixedWidth(80)
+
+        self.step_input = QLineEdit(str(self.STEP / 1e6))
+        self.step_input.setValidator(QDoubleValidator(0.1, 100, 2))
+        self.step_input.setFixedWidth(80)
+
+        self.span_input = QLineEdit(str(self.SPAN / 1e6))
+        self.span_input.setValidator(QDoubleValidator(1, 100, 2))
+        self.span_input.setFixedWidth(80)
+
+        self.sample_rate_input = QLineEdit(str(self.SAMPLE_RATE / 1e6))
+        self.sample_rate_input.setValidator(QDoubleValidator(1, 100, 2))
+        self.sample_rate_input.setFixedWidth(80)
+
+        self.num_samples_input = QLineEdit(str(self.NUM_SAMPLES))
+        self.num_samples_input.setValidator(QDoubleValidator(128, 1_000_000, 0))
+        self.num_samples_input.setFixedWidth(80)
+
+        self.gain_input = QLineEdit(str(self.GAIN))
+        self.gain_input.setValidator(QDoubleValidator(0, 60, 0))
+        self.gain_input.setFixedWidth(80)
+
+        self.apply_rx_settings_btn = QPushButton("Apply RX Settings")
+        self.apply_rx_settings_btn.clicked.connect(self.apply_rx_settings)
+
+        params_layout.addWidget(QLabel("Start (MHz):"))
+        params_layout.addWidget(self.start_freq_input)
+        params_layout.addWidget(QLabel("Stop (MHz):"))
+        params_layout.addWidget(self.end_freq_input)
+        params_layout.addWidget(QLabel("Step (MHz):"))
+        params_layout.addWidget(self.step_input)
+        params_layout.addWidget(QLabel("Span (MHz):"))
+        params_layout.addWidget(self.span_input)
+        params_layout.addWidget(QLabel("Rate (MHz):"))
+        params_layout.addWidget(self.sample_rate_input)
+        params_layout.addWidget(QLabel("Samples:"))
+        params_layout.addWidget(self.num_samples_input)
+        params_layout.addWidget(QLabel("Gain:"))
+        params_layout.addWidget(self.gain_input)
+        params_layout.addWidget(self.apply_rx_settings_btn)
+
+        layout.addLayout(params_layout)
+
+
         layout.addWidget(self.graphWidget)
         layout.addLayout(buttons_layout)
         self.rx_tab.setLayout(layout)
@@ -248,6 +303,42 @@ class SpectrumAnalyzer(QMainWindow):
         layout.addWidget(self.tx_selector)
 
         self.tx_tab.setLayout(layout)
+
+    def apply_rx_settings(self):
+        try:
+            #  Останавливаем таймер обновления спектра, если он работает
+            if self.timer.isActive():
+                self.timer.stop()
+                print("Spectrum update stopped.")
+
+            #  Отключаем приём перед изменением параметров
+            if self.rx is not None:
+                self.rx.enable = False
+                time.sleep(0.2)
+
+            self.START_FREQ = float(self.start_freq_input.text()) * 1e6
+            self.END_FREQ = float(self.end_freq_input.text()) * 1e6
+            self.STEP = float(self.step_input.text()) * 1e6
+            self.SPAN = float(self.span_input.text()) * 1e6
+            self.SAMPLE_RATE = float(self.sample_rate_input.text()) * 1e6
+            self.NUM_SAMPLES = int(float(self.num_samples_input.text()))
+            self.GAIN = int(float(self.gain_input.text()))
+
+            self.window = self.get_window(self.WINDOW_TYPE)
+            self.window_correction = np.mean(self.window ** 2)
+
+            self.center_freqs = np.arange(self.START_FREQ, self.END_FREQ, self.STEP)
+            self.full_spectrum = np.zeros(len(self.center_freqs) * self.NUM_SAMPLES)
+            self.full_freqs = np.zeros(len(self.center_freqs) * self.NUM_SAMPLES)
+            self.max_hold_spectrum = np.full(len(self.center_freqs) * self.NUM_SAMPLES, -120.0)
+
+            self.init_rx_sdr()
+            print("RX parameters updated.")
+        except Exception as e:
+            print(f"Failed to apply RX settings: {e}")
+
+
+
 
     def set_tx_frequency(self):
         try:
@@ -466,6 +557,32 @@ class SpectrumAnalyzer(QMainWindow):
 
 
 if __name__ == "__main__":
+    # Создаем имя лог-файла по текущей дате и времени
+    log_filename = datetime.now().strftime("log_%Y-%m-%d_%H-%M-%S.txt")
+    log_path = os.path.join(os.path.dirname(__file__), log_filename)
+
+
+    # Класс для дублирования вывода в консоль и файл
+    class Logger:
+        def __init__(self, filepath):
+            self.terminal = sys.stdout
+            self.log = open(filepath, "w", encoding="utf-8")
+
+        def write(self, message):
+            self.terminal.write(message)
+            self.log.write(message)
+
+        def flush(self):
+            self.terminal.flush()
+            self.log.flush()
+
+
+    # Перехватываем stdout и stderr
+    sys.stdout = Logger(log_path)
+    sys.stderr = sys.stdout
+
+    print(f"Лог-файл запущен: {log_path}")
+
     app = QApplication(sys.argv)
     window = SpectrumAnalyzer()
     window.show()
