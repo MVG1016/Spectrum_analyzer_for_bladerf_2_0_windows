@@ -328,6 +328,9 @@ class SpectrumAnalyzer(QMainWindow):
                 for freq in np.arange(start_freq, stop_freq + step_freq, step_freq):
                     if not self.sweep_active:
                         break
+
+                    power = float(self.tx_power_input.text())  # Считываем мощность из поля ввода
+                    self.tx.gain = int(round(power))  # Применяем мощность к передатчику
                     self.tx.frequency = int(freq)
                     self.tx.enable = True
                     self.sdr.sync_tx(iq.tobytes(), len(tx_signal))
