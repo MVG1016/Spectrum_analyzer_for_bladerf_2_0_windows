@@ -1,6 +1,9 @@
 # Real-Time Wideband Spectrum Analyzer and Signal Generator with BladeRF
 
-This project is a real-time wideband spectrum analyzer and signal generator built using the [BladeRF 2.0](https://www.nuand.com/bladerf-2-0-micro/) software-defined radio and Python. 
+This project is a real-time wideband spectrum analyzer and signal generator built using the [BladeRF 2.0](https://www.nuand.com/bladerf-2-0-micro/) software-defined radio and Python.
+
+Before using app you need to install all the necessary drivers for your BladeRF2.0
+
 
 ## Features
 
