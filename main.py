@@ -6,6 +6,7 @@ from PyQt5.QtCore import QTimer
 import pyqtgraph as pg
 import sys
 from PyQt5.QtGui import QDoubleValidator
+from threading import Thread
 
 
 class SpectrumAnalyzer(QMainWindow):
@@ -16,6 +17,9 @@ class SpectrumAnalyzer(QMainWindow):
         self.sdr = _bladerf.BladeRF()
         self.rx = None  # Инициализируется позже в switch_rx_channel
         self.tx = None  # Инициализируется позже в switch_tx_channel
+        self.sweep_active = False
+        self.sweep_thread = None
+
 
         # --- Параметры ---
         self.START_FREQ = 5000e6
@@ -193,6 +197,32 @@ class SpectrumAnalyzer(QMainWindow):
         self.tx_selector.addItems(["TX1", "TX2"])
         self.tx_selector.currentIndexChanged.connect(self.switch_tx_channel)
 
+
+        # Sweep mode controls
+        self.sweep_enable_btn = QPushButton("Start Sweep Mode")
+        self.sweep_enable_btn.setCheckable(True)
+        self.sweep_enable_btn.clicked.connect(self.toggle_sweep_mode)
+
+        self.sweep_start_freq = QLineEdit("5000")
+        self.sweep_start_freq.setValidator(QDoubleValidator(0, 6000, 2))
+        self.sweep_stop_freq = QLineEdit("5700")
+        self.sweep_stop_freq.setValidator(QDoubleValidator(0, 6000, 2))
+        self.sweep_step_freq = QLineEdit("10")
+        self.sweep_step_freq.setValidator(QDoubleValidator(0.01, 1000, 2))
+        self.sweep_delay = QLineEdit("100")
+        self.sweep_delay.setValidator(QDoubleValidator(1, 10000, 0))
+
+        layout.addWidget(QLabel("Sweep Start Freq (MHz):"))
+        layout.addWidget(self.sweep_start_freq)
+        layout.addWidget(QLabel("Sweep Stop Freq (MHz):"))
+        layout.addWidget(self.sweep_stop_freq)
+        layout.addWidget(QLabel("Sweep Step (MHz):"))
+        layout.addWidget(self.sweep_step_freq)
+        layout.addWidget(QLabel("Delay per step (ms):"))
+        layout.addWidget(self.sweep_delay)
+        layout.addWidget(self.sweep_enable_btn)
+
+
         # Добавление элементов на интерфейс
         layout.addWidget(self.start_tx_btn)
         layout.addWidget(self.tx_freq_label)
@@ -248,6 +278,68 @@ class SpectrumAnalyzer(QMainWindow):
         except ValueError:
             print("Invalid inputs for frequency or power.")
             self.tx_freq_label.setText("Invalid frequency or power")
+
+
+    def toggle_sweep_mode(self):
+        if self.sweep_enable_btn.isChecked():
+            self.sweep_enable_btn.setText("Stop Sweep Mode")
+            self.sweep_active = True
+            self.sweep_thread = Thread(target=self.run_sweep_transmission)
+            self.sweep_thread.start()
+        else:
+            self.sweep_active = False
+            self.sweep_enable_btn.setText("Start Sweep Mode")
+            if self.tx:
+                self.tx.enable = False
+            print("Sweep transmission stopped.")
+
+
+    def run_sweep_transmission(self):
+        try:
+            self.tx.sample_rate = int(self.SAMPLE_RATE)
+            self.tx.bandwidth = int(self.SPAN)
+            self.tx.gain_mode = _bladerf.GainMode.Manual
+            self.tx.gain = self.GAIN
+            self.tx.enable = True
+
+            self.sdr.sync_config(
+                layout=_bladerf.ChannelLayout.TX_X1,
+                fmt=_bladerf.Format.SC16_Q11,
+                num_buffers=16,
+                buffer_size=self.NUM_SAMPLES * 4,
+                num_transfers=8,
+                stream_timeout=3500
+            )
+
+
+            start_freq = float(self.sweep_start_freq.text()) * 1e6
+            stop_freq = float(self.sweep_stop_freq.text()) * 1e6
+            step_freq = float(self.sweep_step_freq.text()) * 1e6
+            delay_ms = int(self.sweep_delay.text())
+
+            t = np.arange(self.NUM_SAMPLES) / self.SAMPLE_RATE
+            tx_signal = 0.7 * np.exp(2j * np.pi * 1e6 * t)
+
+            iq = np.empty(2 * len(tx_signal), dtype=np.int16)
+            iq[0::2] = np.clip(np.real(tx_signal) * (2 ** 11), -2048, 2047).astype(np.int16)
+            iq[1::2] = np.clip(np.imag(tx_signal) * (2 ** 11), -2048, 2047).astype(np.int16)
+
+            while self.sweep_active:
+                for freq in np.arange(start_freq, stop_freq + step_freq, step_freq):
+                    if not self.sweep_active:
+                        break
+                    self.tx.frequency = int(freq)
+                    self.tx.enable = True
+                    self.sdr.sync_tx(iq.tobytes(), len(tx_signal))
+                    print(f"Sweep TX @ {freq/1e6:.2f} MHz")
+                    time.sleep(delay_ms / 1000.0)
+
+            if self.tx:
+                self.tx.enable = False
+
+        except Exception as e:
+            print(f"Error in sweep mode: {e}")
+
 
     def calculate_spectrum(self, samples):
         windowed_samples = samples * self.window
@@ -348,6 +440,7 @@ class SpectrumAnalyzer(QMainWindow):
             self.rx.enable = False
         if self.tx is not None:
             self.tx.enable = False
+        #self.sweep_active = False
         self.sdr.close()
         event.accept()
 
