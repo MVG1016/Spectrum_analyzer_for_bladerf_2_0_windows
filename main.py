@@ -181,36 +181,52 @@ class SpectrumAnalyzer(QMainWindow):
         self.start_tx_btn = QPushButton("Start Transmission")
         self.start_tx_btn.setCheckable(True)
         self.start_tx_btn.clicked.connect(self.toggle_transmission)
+        self.start_tx_btn.setFixedWidth(300)
 
         # Поле для ввода частоты
         self.tx_freq_label = QLabel("Frequency: 5000 MHz")
         self.tx_freq_input = QLineEdit("5000")
         self.tx_freq_input.setValidator(QDoubleValidator(0, 6000, 2))
+        self.tx_freq_input.setFixedWidth(100)
 
         # Поле для ввода мощности
         self.tx_power_label = QLabel("Power: 10 dB")
         self.tx_power_input = QLineEdit("10")
         self.tx_power_input.setValidator(QDoubleValidator(0, 30, 1))
+        self.tx_power_input.setFixedWidth(100)
+
 
         # Выпадающий список для выбора канала
         self.tx_selector = QComboBox()
         self.tx_selector.addItems(["TX1", "TX2"])
         self.tx_selector.currentIndexChanged.connect(self.switch_tx_channel)
-
+        self.tx_selector.setFixedWidth(100)
 
         # Sweep mode controls
         self.sweep_enable_btn = QPushButton("Start Sweep Mode")
         self.sweep_enable_btn.setCheckable(True)
         self.sweep_enable_btn.clicked.connect(self.toggle_sweep_mode)
+        self.sweep_enable_btn.setFixedWidth(300)
+
+
 
         self.sweep_start_freq = QLineEdit("5000")
         self.sweep_start_freq.setValidator(QDoubleValidator(0, 6000, 2))
+        self.sweep_start_freq.setFixedWidth(100)
+
         self.sweep_stop_freq = QLineEdit("5700")
         self.sweep_stop_freq.setValidator(QDoubleValidator(0, 6000, 2))
+        self.sweep_stop_freq.setFixedWidth(100)
+
+
         self.sweep_step_freq = QLineEdit("10")
         self.sweep_step_freq.setValidator(QDoubleValidator(0.01, 1000, 2))
+        self.sweep_step_freq.setFixedWidth(100)
+
         self.sweep_delay = QLineEdit("100")
         self.sweep_delay.setValidator(QDoubleValidator(1, 10000, 0))
+        self.sweep_delay.setFixedWidth(100)
+
 
         layout.addWidget(QLabel("Sweep Start Freq (MHz):"))
         layout.addWidget(self.sweep_start_freq)
