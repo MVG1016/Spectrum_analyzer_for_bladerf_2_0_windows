@@ -3,6 +3,7 @@ import numpy as np
 import time
 from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPushButton, QHBoxLayout, QComboBox, QTabWidget, QLineEdit, QLabel
 from PyQt5.QtCore import QTimer
+from PyQt5.QtCore import QLocale
 import pyqtgraph as pg
 import sys
 from PyQt5.QtGui import QDoubleValidator
@@ -125,7 +126,7 @@ class SpectrumAnalyzer(QMainWindow):
         )
 
     def init_ui(self):
-        self.setWindowTitle(f"BladeRF 2.0 Spectrum Analyzer | Window: {self.WINDOW_TYPE}")
+        self.setWindowTitle(f"BladeRF 2.0 Spectrum Analyzer and Signal GAenerator")
         self.setGeometry(100, 100, 1000, 600)
 
         self.tab_widget = QTabWidget()
@@ -560,6 +561,8 @@ if __name__ == "__main__":
     # Создаем имя лог-файла по текущей дате и времени
     log_filename = datetime.now().strftime("log_%Y-%m-%d_%H-%M-%S.txt")
     log_path = os.path.join(os.path.dirname(__file__), log_filename)
+
+    QLocale.setDefault(QLocale("C"))
 
 
     # Класс для дублирования вывода в консоль и файл
