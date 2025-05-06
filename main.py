@@ -558,31 +558,48 @@ class SpectrumAnalyzer(QMainWindow):
 
 
 if __name__ == "__main__":
+    QLocale.setDefault(QLocale("C"))
     # Создаем имя лог-файла по текущей дате и времени
     log_filename = datetime.now().strftime("log_%Y-%m-%d_%H-%M-%S.txt")
     log_path = os.path.join(os.path.dirname(__file__), log_filename)
 
-    QLocale.setDefault(QLocale("C"))
 
 
     # Класс для дублирования вывода в консоль и файл
     class Logger:
         def __init__(self, filepath):
-            self.terminal = sys.stdout
+            self.terminal = sys.__stdout__  # Используем sys.__stdout__ напрямую (всегда существует)
             self.log = open(filepath, "w", encoding="utf-8")
 
         def write(self, message):
-            self.terminal.write(message)
-            self.log.write(message)
+            try:
+                if self.terminal:
+                    self.terminal.write(message)
+            except Exception:
+                pass  # На всякий случай — не падать даже при сбоях вывода
+
+            try:
+                self.log.write(message)
+            except Exception:
+                pass
 
         def flush(self):
-            self.terminal.flush()
-            self.log.flush()
+            try:
+                if self.terminal:
+                    self.terminal.flush()
+            except Exception:
+                pass
+
+            try:
+                self.log.flush()
+            except Exception:
+                pass
 
 
     # Перехватываем stdout и stderr
-    sys.stdout = Logger(log_path)
-    sys.stderr = sys.stdout
+    logger = Logger(log_path)
+    sys.stdout = logger
+    sys.stderr = logger
 
     print(f"Лог-файл запущен: {log_path}")
 
