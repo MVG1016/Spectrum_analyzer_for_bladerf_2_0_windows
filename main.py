@@ -600,7 +600,6 @@ if __name__ == "__main__":
     logger = Logger(log_path)
     sys.stdout = logger
     sys.stderr = logger
-
     print(f"Лог-файл запущен: {log_path}")
 
     app = QApplication(sys.argv)
