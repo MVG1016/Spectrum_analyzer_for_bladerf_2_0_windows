@@ -335,6 +335,7 @@ class SpectrumAnalyzer(QMainWindow):
                     self.tx.enable = True
                     self.sdr.sync_tx(iq.tobytes(), len(tx_signal))
                     print(f"Sweep TX @ {freq/1e6:.2f} MHz")
+                    self.tx_power_label.setText(f"TX Power: {self.tx.gain} dB")
                     time.sleep(delay_ms / 1000.0)
 
             if self.tx:
