@@ -394,7 +394,7 @@ class SpectrumAnalyzer(QMainWindow):
             print("RX parameters updated.")
 
             # Обновление подписей оси частоты после изменения частотных параметров
-            self.graphWidget.setLabel('bottom', 'Frequency (MHz)', units='MHz')
+            #self.graphWidget.setLabel('bottom', 'Frequency (MHz)', units='MHz')
             self.graphWidget.setXRange(self.START_FREQ / 1e6, self.END_FREQ / 1e6)
             self.graphWidget.setXLink(self.graphWidget)  # Установить привязку оси X к обновлениям
             self.update_waterfall_axis()
