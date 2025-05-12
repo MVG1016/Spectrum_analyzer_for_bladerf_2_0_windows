@@ -26,12 +26,12 @@ class SpectrumAnalyzer(QMainWindow):
 
 
         # --- Параметры ---
-        self.START_FREQ = 5000e6
-        self.END_FREQ = 5700e6
-        self.SPAN = 20e6
-        self.STEP = 10e6
-        self.SAMPLE_RATE = 40e6
-        self.NUM_SAMPLES = 8192
+        self.START_FREQ = 80e6
+        self.END_FREQ = 120e6
+        self.SPAN = 10e6
+        self.STEP = 0.5e6
+        self.SAMPLE_RATE = 10e6
+        self.NUM_SAMPLES = 32768
         self.GAIN = 18
         self.WINDOW_TYPE = 'hann'
 
@@ -225,7 +225,8 @@ class SpectrumAnalyzer(QMainWindow):
 
         layout.addLayout(params_layout)
 
-
+        # self.graphWidget.setXRange(self.START_FREQ / 1e6 + (self.SAMPLE_RATE / 2),
+        #                            self.END_FREQ / 1e6 - self.SAMPLE_RATE / 2)
         layout.addWidget(self.graphWidget)
         layout.addLayout(buttons_layout)
         self.rx_tab.setLayout(layout)
@@ -335,11 +336,13 @@ class SpectrumAnalyzer(QMainWindow):
 
             self.init_rx_sdr()
             print("RX parameters updated.")
+
+            # Обновление подписей оси частоты после изменения частотных параметров
+            self.graphWidget.setLabel('bottom', 'Frequency (MHz)', units='MHz')
+            self.graphWidget.setXRange(self.START_FREQ / 1e6, self.END_FREQ / 1e6)
+            self.graphWidget.setXLink(self.graphWidget)  # Установить привязку оси X к обновлениям
         except Exception as e:
             print(f"Failed to apply RX settings: {e}")
-
-
-
 
     def set_tx_frequency(self):
         try:
@@ -540,6 +543,7 @@ class SpectrumAnalyzer(QMainWindow):
         max_power = self.full_spectrum[max_idx]
 
         self.spectrum_curve.setData(self.full_freqs / 1e6, self.full_spectrum)
+
         self.max_marker.setData([max_freq], [max_power])
         self.max_text.setText(f"Peak: {max_power:.1f} dBm @ {max_freq:.2f} MHz")
         self.max_text.setPos(max_freq, max_power)
