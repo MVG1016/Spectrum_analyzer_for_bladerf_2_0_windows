@@ -608,7 +608,12 @@ if __name__ == "__main__":
 
     app = QApplication(sys.argv)
 
-    icon_path = os.path.join(base_path, "bladerf2_0.ico")
+    #icon_path = os.path.join(base_path, "bladerf2_0.ico")
+    if getattr(sys, 'frozen', False):
+        icon_path = os.path.join(sys._MEIPASS, "bladerf2_0.ico")  # путь к файлам во временной папке PyInstaller
+    else:
+        icon_path = os.path.join(base_path, "bladerf2_0.ico")
+
     if os.path.exists(icon_path):
         app.setWindowIcon(QIcon(icon_path))
 
