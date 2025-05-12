@@ -11,7 +11,7 @@ from threading import Thread
 import sys
 import os
 from datetime import datetime
-
+from PyQt5.QtGui import QIcon
 
 class SpectrumAnalyzer(QMainWindow):
     def __init__(self):
@@ -559,50 +559,59 @@ class SpectrumAnalyzer(QMainWindow):
 
 if __name__ == "__main__":
     QLocale.setDefault(QLocale("C"))
-    # Создаем имя лог-файла по текущей дате и времени
+
+    # Определяем путь к рабочей директории (поддерживает exe и py)
+    if getattr(sys, 'frozen', False):
+        base_path = os.path.dirname(sys.executable)
+    else:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+
+    # Генерируем путь к лог-файлу
     log_filename = datetime.now().strftime("log_%Y-%m-%d_%H-%M-%S.txt")
-    log_path = os.path.join(os.path.dirname(__file__), log_filename)
+    log_path = os.path.join(base_path, log_filename)
 
-
-
-    # Класс для дублирования вывода в консоль и файл
+    # Класс для логгирования stdout/stderr в файл и консоль
     class Logger:
         def __init__(self, filepath):
-            self.terminal = sys.__stdout__  # Используем sys.__stdout__ напрямую (всегда существует)
-            self.log = open(filepath, "w", encoding="utf-8")
+            self.terminal = sys.__stdout__
+            self.log = open(filepath, "w", encoding="utf-8", buffering=1)  # строковая буферизация
 
         def write(self, message):
-            try:
-                if self.terminal:
+            if self.terminal:
+                try:
                     self.terminal.write(message)
-            except Exception:
-                pass  # На всякий случай — не падать даже при сбоях вывода
-
+                except Exception:
+                    pass
             try:
                 self.log.write(message)
+                self.log.flush()
             except Exception:
                 pass
 
         def flush(self):
-            try:
-                if self.terminal:
+            if self.terminal:
+                try:
                     self.terminal.flush()
-            except Exception:
-                pass
-
+                except Exception:
+                    pass
             try:
                 self.log.flush()
             except Exception:
                 pass
 
-
     # Перехватываем stdout и stderr
     logger = Logger(log_path)
     sys.stdout = logger
     sys.stderr = logger
-    print(f"Лог-файл запущен: {log_path}")
+
+    print(f"Log started: {log_path}")
 
     app = QApplication(sys.argv)
+
+    icon_path = os.path.join(base_path, "bladerf2_0.ico")
+    if os.path.exists(icon_path):
+        app.setWindowIcon(QIcon(icon_path))
+
     window = SpectrumAnalyzer()
     window.show()
     sys.exit(app.exec_())
