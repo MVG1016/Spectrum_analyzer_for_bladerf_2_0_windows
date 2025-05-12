@@ -71,13 +71,12 @@ class SpectrumAnalyzer(QMainWindow):
         self.max_hold_enabled = False
         self.max_hold_spectrum = np.full(len(self.center_freqs) * self.NUM_SAMPLES, -120.0)
         self.max_hold_curve = self.graphWidget.plot(pen=pg.mkPen('c', style=pg.QtCore.Qt.DashLine))
-
-
-
-        self.waterfall_history = 100  # Количество строк в водопаде
-        self.waterfall_width = 2048  # Количество точек по частоте (можно уменьшить для производительности)
-        self.waterfall_data = np.zeros((self.waterfall_history, self.waterfall_width), dtype=np.uint8)
+        # НАСТРОЙКИ ВОДОПАДА
+        self.waterfall_history = 200  # Количество сохраняемых кадров
+        self.waterfall_data = np.zeros((self.waterfall_history, self.NUM_SAMPLES))
         self.waterfall_ptr = 0
+        self.waterfall_min = -120  # Минимальный уровень (дБ)
+        self.waterfall_max = 0     # Максимальный уровень (дБ)
 
     def get_window(self, window_type):
         if window_type == 'hann':
@@ -238,31 +237,26 @@ class SpectrumAnalyzer(QMainWindow):
         layout.addWidget(self.graphWidget)
         layout.addLayout(buttons_layout)
 
-        # Создаем виджет водопада
+        # Waterfall Plot
         self.waterfallWidget = pg.PlotWidget()
         self.waterfallImg = pg.ImageItem()
         self.waterfallWidget.addItem(self.waterfallImg)
-
-        # Правильные подписи осей
         self.waterfallWidget.setLabel('left', 'Time')
         self.waterfallWidget.setLabel('bottom', 'Frequency (MHz)')
 
-        # Устанавливаем правильный масштаб по X
-        self.update_waterfall_axis()
-
-        # Цветовая карта
-        colors = [
-            (0, 0, 255),  # Синий
-            (0, 255, 0),  # Зеленый
-            (255, 255, 0),  # Желтый
-            (255, 0, 0)  # Красный
-        ]
-        cmap = pg.ColorMap(np.linspace(0, 1, len(colors)), colors)
+        # Цветовая карта (Jet-like)
+        pos = np.array([0.0, 0.25, 0.5, 0.75, 1.0])
+        color = np.array([
+            [0, 0, 128, 255],  # Темно-синий
+            [0, 0, 255, 255],  # Синий
+            [0, 255, 255, 255],  # Голубой
+            [255, 255, 0, 255],  # Желтый
+            [255, 0, 0, 255]  # Красный
+        ], dtype=np.ubyte)
+        cmap = pg.ColorMap(pos, color)
         self.waterfallImg.setLookupTable(cmap.getLookupTable())
 
-        # Добавляем в layout
         layout.addWidget(self.waterfallWidget)
-
         self.rx_tab.setLayout(layout)
 
     def toggle_waterfall(self, state):
@@ -381,7 +375,8 @@ class SpectrumAnalyzer(QMainWindow):
             self.SAMPLE_RATE = float(self.sample_rate_input.text()) * 1e6
             self.NUM_SAMPLES = int(float(self.num_samples_input.text()))
             self.GAIN = int(float(self.gain_input.text()))
-
+            self.waterfall_data = np.zeros((self.waterfall_history, self.NUM_SAMPLES), dtype=np.uint8)
+            self.waterfall_ptr = 0
             self.window = self.get_window(self.WINDOW_TYPE)
             self.window_correction = np.mean(self.window ** 2)
 
@@ -566,91 +561,106 @@ class SpectrumAnalyzer(QMainWindow):
             print("Transmission stopped")
 
     def update_waterfall_axis(self):
-        """Обновляет частотную ось водопада в соответствии с текущими настройками"""
-        if not hasattr(self, 'waterfallWidget'):
-            return
+        pass
 
-        # Рассчитываем реальные частоты
-        start_freq = self.START_FREQ / 1e6  # в MHz
-        end_freq = self.END_FREQ / 1e6
+    def update_waterfall(self, power_db, center_freq):
+        """Обновляет данные водопада с правильной привязкой к частоте"""
+        # Нормализуем данные в диапазон 0-255
+        norm_data = np.clip((power_db - self.waterfall_min) /
+                            (self.waterfall_max - self.waterfall_min) * 255, 0, 255)
 
-        # Устанавливаем диапазон
-        self.waterfallWidget.setXRange(start_freq, end_freq)
+        # Добавляем новый кадр
+        self.waterfall_data[self.waterfall_ptr] = norm_data
+        self.waterfall_ptr = (self.waterfall_ptr + 1) % self.waterfall_history
 
-        # Для точного позиционирования изображения
+        # Вычисляем частотную ось
+        freq_axis = center_freq + np.fft.fftshift(np.fft.fftfreq(
+            len(power_db),
+            d=1.0 / self.SAMPLE_RATE
+        ))
 
-
-
-
+        # Устанавливаем правильные координаты изображения
+        self.waterfallImg.setImage(
+            self.waterfall_data,
+            rect=(freq_axis[0] / 1e6, 0,  # X start (MHz), Y start
+                  (freq_axis[-1] - freq_axis[0]) / 1e6,  # Width (MHz)
+                  self.waterfall_history)  # Height (time)
+        )
 
     def update_spectrum(self):
-        scan_start = time.time()
+        try:
+            scan_start = time.time()
 
-        for i, freq in enumerate(self.center_freqs):
+            for i, freq in enumerate(self.center_freqs):
+                cal = self.get_calibration(freq)
+                freq_offset = cal["freq_offset"]
+                power_offset = cal["power_offset"]
 
+                self.rx.frequency = int(freq + freq_offset)
+                time.sleep(0.0001)
 
-            cal = self.get_calibration(freq)
-            freq_offset = cal["freq_offset"]
-            power_offset = cal["power_offset"]
+                buf = bytearray(self.NUM_SAMPLES * 4)
+                self.sdr.sync_rx(buf, self.NUM_SAMPLES)
 
-            self.rx.frequency = int(freq + freq_offset)
-            time.sleep(0.0001)
+                samples = np.frombuffer(buf, dtype=np.int16).astype(np.float32)
+                samples = samples.view(np.complex64) / (2 ** 11)
 
-            buf = bytearray(self.NUM_SAMPLES * 4)
-            self.sdr.sync_rx(buf, self.NUM_SAMPLES)
+                power_db = self.calculate_spectrum(samples) + power_offset
 
-            samples = np.frombuffer(buf, dtype=np.int16).astype(np.float32)
-            samples = samples.view(np.complex64) / (2 ** 11)
+                # Обновление основного спектра
+                start_idx = i * self.NUM_SAMPLES
+                end_idx = (i + 1) * self.NUM_SAMPLES
+                self.full_freqs[start_idx:end_idx] = np.fft.fftshift(
+                    np.fft.fftfreq(len(samples), d=1 / self.SAMPLE_RATE)) + freq
+                self.full_spectrum[start_idx:end_idx] = power_db
 
-            power_db = self.calculate_spectrum(samples)
-            power_db += power_offset
+                # ОБНОВЛЕНИЕ ВОДОПАДА
+                if hasattr(self, 'waterfallImg'):
+                    # Нормализация мощности в 0-255
+                    norm_power = np.clip((power_db - (-120)) / 120 * 255, 0, 255).astype(np.uint8)
 
-            start_idx = i * self.NUM_SAMPLES
-            end_idx = (i + 1) * self.NUM_SAMPLES
-            self.full_freqs[start_idx:end_idx] = np.fft.fftshift(
-                np.fft.fftfreq(len(samples), d=1 / self.SAMPLE_RATE)) + freq
-            self.full_spectrum[start_idx:end_idx] = power_db
+                    # Добавляем новую строку
+                    self.waterfall_data[self.waterfall_ptr, :] = norm_power
+                    self.waterfall_ptr = (self.waterfall_ptr + 1) % self.waterfall_history
 
-            if i == len(self.center_freqs) // 2:  # Берем центральный спектр
-                # Ресемплируем спектр под ширину водопада
-                resampled = np.mean(
-                    power_db.reshape(-1, len(power_db) // self.waterfall_width),
-                    axis=1
-                )[:self.waterfall_width]
+                    # Обновляем изображение
+                    self.waterfallImg.setImage(
+                        self.waterfall_data,
+                        autoLevels=False,
+                        levels=(0, 255)
+                    )
 
-                # Нормализуем и сохраняем
-                self.waterfall_data[self.waterfall_ptr] = np.interp(
-                    resampled, [-120, 0], [0, 255]
-                ).astype(np.uint8)
+                    # Устанавливаем правильные оси
+                    min_freq = (freq - self.SAMPLE_RATE / 2) / 1e6
+                    max_freq = (freq + self.SAMPLE_RATE / 2) / 1e6
+                    self.waterfallImg.setRect(
+                        QtCore.QRectF(
+                            min_freq, 0,
+                            max_freq - min_freq,
+                            self.waterfall_history
+                        )
+                    )
 
-                self.waterfall_ptr = (self.waterfall_ptr + 1) % self.waterfall_history
+            # Обновление основного графика
+            self.spectrum_curve.setData(self.full_freqs / 1e6, self.full_spectrum)
 
-        if self.max_hold_enabled:
-            self.max_hold_spectrum = np.maximum(self.max_hold_spectrum, self.full_spectrum)
-            self.max_hold_curve.setData(self.full_freqs / 1e6, self.max_hold_spectrum)
+            # Max Hold
+            if self.max_hold_enabled:
+                self.max_hold_spectrum = np.maximum(self.max_hold_spectrum, self.full_spectrum)
+                self.max_hold_curve.setData(self.full_freqs / 1e6, self.max_hold_spectrum)
 
-        max_idx = np.argmax(self.full_spectrum)
-        max_freq = self.full_freqs[max_idx] / 1e6
-        max_power = self.full_spectrum[max_idx]
+            # Пиковый маркер
+            max_idx = np.argmax(self.full_spectrum)
+            max_freq = self.full_freqs[max_idx] / 1e6
+            max_power = self.full_spectrum[max_idx]
+            self.max_marker.setData([max_freq], [max_power])
+            self.max_text.setText(f"Peak: {max_power:.1f} dBm @ {max_freq:.2f} MHz")
+            self.max_text.setPos(max_freq, max_power)
 
-        self.spectrum_curve.setData(self.full_freqs / 1e6, self.full_spectrum)
+            print(f"Scan time: {(time.time() - scan_start):.2f}s | Peak: {max_power:.1f}dBm @ {max_freq:.2f}MHz")
 
-        self.max_marker.setData([max_freq], [max_power])
-        self.max_text.setText(f"Peak: {max_power:.1f} dBm @ {max_freq:.2f} MHz")
-        self.max_text.setPos(max_freq, max_power)
-
-        if hasattr(self, 'waterfallImg'):
-            self.waterfallImg.setImage(
-                self.waterfall_data.T,
-                autoLevels=False,
-                levels=(0, 255))
-
-            # Автоматическое обновление оси Y (время)
-            self.waterfallWidget.setYRange(
-                0, self.waterfall_history)
-        scan_time = (time.time() - scan_start)
-
-        print(f"Scan time: {scan_time:.2f} s | Peak: {max_power:.1f} dBm @ {max_freq:.2f} MHz")
+        except Exception as e:
+            print(f"Error in update_spectrum: {str(e)}")
 
     def closeEvent(self, event):
         if self.rx is not None:
