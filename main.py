@@ -582,6 +582,7 @@ class SpectrumAnalyzer(QMainWindow):
 
 
 
+
     def update_spectrum(self):
         scan_start = time.time()
 
