@@ -253,11 +253,11 @@ class SpectrumAnalyzer(QMainWindow):
         # Цветовая карта (Jet-like)
         pos = np.array([0.0, 0.25, 0.5, 0.75, 1.0])
         color = np.array([
-            [0, 0, 255, 255],  # Темно-синий
-            [0, 255, 255, 255],  # Синий
-            [0, 255, 0, 255],  # Голубой
-            [255, 255, 0, 255],  # Желтый
-            [255, 0, 0, 255]  # Красный
+            [0, 0, 255, 255],
+            [0, 255, 255, 255],
+            [0, 255, 0, 255],
+            [255, 255, 0, 255],
+            [255, 0, 0, 255]
         ], dtype=np.ubyte)
         cmap = pg.ColorMap(pos, color)
         self.waterfallImg.setLookupTable(cmap.getLookupTable())
@@ -559,8 +559,9 @@ class SpectrumAnalyzer(QMainWindow):
         self.waterfall_ptr = (self.waterfall_ptr + 1) % self.waterfall_data.shape[0]
 
         # Отображаем данные
-        img_data = np.roll(self.waterfall_data, -self.waterfall_ptr, axis=0)
-        self.waterfallImg.setImage(img_data, autoLevels=False, levels=(-120, 0))
+        img_data = np.roll(self.waterfall_data, -self.waterfall_ptr, axis=0).T
+        #img_data = np.flipud(img_data)
+        self.waterfallImg.setImage(img_data, autoLevels=False, levels=(-100, -20))
 
         # Настраиваем оси
         x_scale = (self.full_freqs[-1] - self.full_freqs[0]) / (1e6 * len(self.full_freqs))
