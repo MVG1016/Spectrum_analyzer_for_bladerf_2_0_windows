@@ -13,6 +13,9 @@ import os
 from datetime import datetime
 from PyQt5.QtGui import QIcon
 from PyQt5 import QtCore
+from pyqtgraph import ImageView
+from pyqtgraph.Qt import QtGui
+
 
 class SpectrumAnalyzer(QMainWindow):
     def __init__(self):
@@ -67,16 +70,16 @@ class SpectrumAnalyzer(QMainWindow):
         self.full_spectrum = np.zeros(len(self.center_freqs) * self.NUM_SAMPLES)
         self.full_freqs = np.zeros(len(self.center_freqs) * self.NUM_SAMPLES)
 
+
         # --- Max Hold ---
         self.max_hold_enabled = False
         self.max_hold_spectrum = np.full(len(self.center_freqs) * self.NUM_SAMPLES, -120.0)
         self.max_hold_curve = self.graphWidget.plot(pen=pg.mkPen('c', style=pg.QtCore.Qt.DashLine))
         # НАСТРОЙКИ ВОДОПАДА
-        self.waterfall_history = 200  # Количество сохраняемых кадров
-        self.waterfall_data = np.zeros((self.waterfall_history, self.NUM_SAMPLES))
-        self.waterfall_ptr = 0
-        self.waterfall_min = -120  # Минимальный уровень (дБ)
-        self.waterfall_max = 0     # Максимальный уровень (дБ)
+
+        self.waterfall_data = np.zeros((100, len(self.center_freqs) * self.NUM_SAMPLES))  # Буфер для водопада
+        self.waterfall_ptr = 0  # Указатель на текущую строку
+
 
     def get_window(self, window_type):
         if window_type == 'hann':
@@ -147,6 +150,7 @@ class SpectrumAnalyzer(QMainWindow):
         self.init_rx_ui()
         self.init_tx_ui()
 
+
     def init_rx_ui(self):
         layout = QVBoxLayout()
 
@@ -155,6 +159,7 @@ class SpectrumAnalyzer(QMainWindow):
         self.graphWidget.setLabel('bottom', 'Frequency (MHz)')
         self.graphWidget.setYRange(-120, 0)
         self.graphWidget.showGrid(x=True, y=True)
+
 
         self.spectrum_curve = self.graphWidget.plot(pen='y')
 
@@ -237,6 +242,7 @@ class SpectrumAnalyzer(QMainWindow):
         layout.addWidget(self.graphWidget)
         layout.addLayout(buttons_layout)
 
+
         # Waterfall Plot
         self.waterfallWidget = pg.PlotWidget()
         self.waterfallImg = pg.ImageItem()
@@ -247,9 +253,9 @@ class SpectrumAnalyzer(QMainWindow):
         # Цветовая карта (Jet-like)
         pos = np.array([0.0, 0.25, 0.5, 0.75, 1.0])
         color = np.array([
-            [0, 0, 128, 255],  # Темно-синий
-            [0, 0, 255, 255],  # Синий
-            [0, 255, 255, 255],  # Голубой
+            [0, 0, 255, 255],  # Темно-синий
+            [0, 255, 255, 255],  # Синий
+            [0, 255, 0, 255],  # Голубой
             [255, 255, 0, 255],  # Желтый
             [255, 0, 0, 255]  # Красный
         ], dtype=np.ubyte)
@@ -259,25 +265,10 @@ class SpectrumAnalyzer(QMainWindow):
         layout.addWidget(self.waterfallWidget)
         self.rx_tab.setLayout(layout)
 
-    def toggle_waterfall(self, state):
-        self.waterfallWidget.setVisible = True
-    def update_waterfall_history(self, value):
-        old_data = self.waterfall_data
-        old_ptr = self.waterfall_ptr
 
-        # Создаем новый буфер
-        self.waterfall_history = value
-        self.waterfall_data = np.zeros((value, self.NUM_SAMPLES), dtype=np.uint8)
-        self.waterfall_time_axis = np.linspace(-value * 0.1, 0, value)  # 0.1 сек на кадр
 
-        # Копируем данные
-        rows_to_copy = min(value, len(old_data))
-        if old_ptr < rows_to_copy:
-            self.waterfall_data[:old_ptr] = old_data[:old_ptr]
-        else:
-            self.waterfall_data[:rows_to_copy] = old_data[old_ptr - rows_to_copy:old_ptr]
+        self.rx_tab.setLayout(layout)
 
-        self.waterfall_ptr = min(old_ptr, value - 1)
 
 
 
@@ -375,8 +366,7 @@ class SpectrumAnalyzer(QMainWindow):
             self.SAMPLE_RATE = float(self.sample_rate_input.text()) * 1e6
             self.NUM_SAMPLES = int(float(self.num_samples_input.text()))
             self.GAIN = int(float(self.gain_input.text()))
-            self.waterfall_data = np.zeros((self.waterfall_history, self.NUM_SAMPLES), dtype=np.uint8)
-            self.waterfall_ptr = 0
+
             self.window = self.get_window(self.WINDOW_TYPE)
             self.window_correction = np.mean(self.window ** 2)
 
@@ -388,11 +378,14 @@ class SpectrumAnalyzer(QMainWindow):
             self.init_rx_sdr()
             print("RX parameters updated.")
 
+            self.waterfall_data = np.zeros((100, len(self.center_freqs) * self.NUM_SAMPLES))
+            self.waterfall_ptr = 0
+
             # Обновление подписей оси частоты после изменения частотных параметров
             #self.graphWidget.setLabel('bottom', 'Frequency (MHz)', units='MHz')
             self.graphWidget.setXRange(self.START_FREQ / 1e6, self.END_FREQ / 1e6)
             self.graphWidget.setXLink(self.graphWidget)  # Установить привязку оси X к обновлениям
-            self.update_waterfall_axis()
+
         except Exception as e:
             print(f"Failed to apply RX settings: {e}")
 
@@ -560,32 +553,26 @@ class SpectrumAnalyzer(QMainWindow):
             self.start_tx_btn.setText("Start Transmission")
             print("Transmission stopped")
 
-    def update_waterfall_axis(self):
-        pass
+    def update_waterfall(self, spectrum):
+        # Добавляем новые данные в буфер водопада
+        self.waterfall_data[self.waterfall_ptr, :] = spectrum
+        self.waterfall_ptr = (self.waterfall_ptr + 1) % self.waterfall_data.shape[0]
 
-    def update_waterfall(self, power_db, center_freq):
-        """Обновляет данные водопада с правильной привязкой к частоте"""
-        # Нормализуем данные в диапазон 0-255
-        norm_data = np.clip((power_db - self.waterfall_min) /
-                            (self.waterfall_max - self.waterfall_min) * 255, 0, 255)
+        # Отображаем данные
+        img_data = np.roll(self.waterfall_data, -self.waterfall_ptr, axis=0)
+        self.waterfallImg.setImage(img_data, autoLevels=False, levels=(-120, 0))
 
-        # Добавляем новый кадр
-        self.waterfall_data[self.waterfall_ptr] = norm_data
-        self.waterfall_ptr = (self.waterfall_ptr + 1) % self.waterfall_history
-
-        # Вычисляем частотную ось
-        freq_axis = center_freq + np.fft.fftshift(np.fft.fftfreq(
-            len(power_db),
-            d=1.0 / self.SAMPLE_RATE
+        # Настраиваем оси
+        x_scale = (self.full_freqs[-1] - self.full_freqs[0]) / (1e6 * len(self.full_freqs))
+        self.waterfallImg.setRect(QtCore.QRectF(
+            self.full_freqs[0] / 1e6,  # x
+            0,  # y
+            (self.full_freqs[-1] - self.full_freqs[0]) / 1e6,  # width
+            self.waterfall_data.shape[0]  # height
         ))
 
-        # Устанавливаем правильные координаты изображения
-        self.waterfallImg.setImage(
-            self.waterfall_data,
-            rect=(freq_axis[0] / 1e6, 0,  # X start (MHz), Y start
-                  (freq_axis[-1] - freq_axis[0]) / 1e6,  # Width (MHz)
-                  self.waterfall_history)  # Height (time)
-        )
+        # Синхронизация осей X с графиком спектра
+        self.waterfallWidget.setXRange(*self.graphWidget.viewRange()[0])
 
     def update_spectrum(self):
         try:
@@ -614,36 +601,11 @@ class SpectrumAnalyzer(QMainWindow):
                     np.fft.fftfreq(len(samples), d=1 / self.SAMPLE_RATE)) + freq
                 self.full_spectrum[start_idx:end_idx] = power_db
 
-                # ОБНОВЛЕНИЕ ВОДОПАДА
-                if hasattr(self, 'waterfallImg'):
-                    # Нормализация мощности в 0-255
-                    norm_power = np.clip((power_db - (-120)) / 120 * 255, 0, 255).astype(np.uint8)
-
-                    # Добавляем новую строку
-                    self.waterfall_data[self.waterfall_ptr, :] = norm_power
-                    self.waterfall_ptr = (self.waterfall_ptr + 1) % self.waterfall_history
-
-                    # Обновляем изображение
-                    self.waterfallImg.setImage(
-                        self.waterfall_data,
-                        autoLevels=False,
-                        levels=(0, 255)
-                    )
-
-                    # Устанавливаем правильные оси
-                    min_freq = (freq - self.SAMPLE_RATE / 2) / 1e6
-                    max_freq = (freq + self.SAMPLE_RATE / 2) / 1e6
-                    self.waterfallImg.setRect(
-                        QtCore.QRectF(
-                            min_freq, 0,
-                            max_freq - min_freq,
-                            self.waterfall_history
-                        )
-                    )
-
             # Обновление основного графика
             self.spectrum_curve.setData(self.full_freqs / 1e6, self.full_spectrum)
 
+            # Обновление водопада
+            self.update_waterfall(self.full_spectrum)
             # Max Hold
             if self.max_hold_enabled:
                 self.max_hold_spectrum = np.maximum(self.max_hold_spectrum, self.full_spectrum)
