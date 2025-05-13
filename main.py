@@ -38,6 +38,7 @@ class SpectrumAnalyzer(QMainWindow):
         self.NUM_SAMPLES = 32768
         self.GAIN = 18
         self.WINDOW_TYPE = 'hann'
+        self.StepsWaterfall = 50
 
         # --- Калибровочная таблица ---
         self.calibration_table = {
@@ -76,8 +77,7 @@ class SpectrumAnalyzer(QMainWindow):
         self.max_hold_spectrum = np.full(len(self.center_freqs) * self.NUM_SAMPLES, -120.0)
         self.max_hold_curve = self.graphWidget.plot(pen=pg.mkPen('c', style=pg.QtCore.Qt.DashLine))
         # НАСТРОЙКИ ВОДОПАДА
-
-        self.waterfall_data = np.zeros((100, len(self.center_freqs) * self.NUM_SAMPLES))  # Буфер для водопада
+        self.waterfall_data = np.zeros((self.StepsWaterfall, len(self.center_freqs) * self.NUM_SAMPLES))  # Буфер для водопада
         self.waterfall_ptr = 0  # Указатель на текущую строку
 
 
@@ -245,10 +245,16 @@ class SpectrumAnalyzer(QMainWindow):
 
         # Waterfall Plot
         self.waterfallWidget = pg.PlotWidget()
+
         self.waterfallImg = pg.ImageItem()
         self.waterfallWidget.addItem(self.waterfallImg)
-        self.waterfallWidget.setLabel('left', 'Time')
+
+        self.waterfallWidget.getViewBox().invertY(True)
+
+        self.waterfallWidget.setLabel('left', 'Step')
         self.waterfallWidget.setLabel('bottom', 'Frequency (MHz)')
+
+
 
         # Цветовая карта (Jet-like)
         pos = np.array([0.0, 0.25, 0.5, 0.75, 1.0])
@@ -559,9 +565,9 @@ class SpectrumAnalyzer(QMainWindow):
         self.waterfall_ptr = (self.waterfall_ptr + 1) % self.waterfall_data.shape[0]
 
         # Отображаем данные
-        img_data = np.roll(self.waterfall_data, -self.waterfall_ptr, axis=0).T
-        #img_data = np.flipud(img_data)
-        self.waterfallImg.setImage(img_data, autoLevels=False, levels=(-100, -20))
+        img_data = np.roll(self.waterfall_data, -self.waterfall_ptr, axis=0)
+        img_data = np.flipud(img_data)
+        self.waterfallImg.setImage(img_data.T, autoLevels=False, levels=(-85, 0))
 
         # Настраиваем оси
         x_scale = (self.full_freqs[-1] - self.full_freqs[0]) / (1e6 * len(self.full_freqs))
@@ -573,6 +579,7 @@ class SpectrumAnalyzer(QMainWindow):
         ))
 
         # Синхронизация осей X с графиком спектра
+        self.waterfallWidget.setYRange(0, self.waterfall_data.shape[0], padding=0)
         self.waterfallWidget.setXRange(*self.graphWidget.viewRange()[0])
 
     def update_spectrum(self):
