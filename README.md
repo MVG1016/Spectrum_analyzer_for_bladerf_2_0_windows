@@ -9,6 +9,7 @@ Before using app you need to install all the necessary drivers for your BladeRF2
 
 - Real-time spectrum display that allows wideband scan (75-6000MHz)
 - Adjustable gain and FFT window settings and frequency range
+- Waterfall mode
 - "Max Hold" mode for capturing peak values
 - Switching between Rx1/Rx2 and Tx1/Tx2 channels
 - Highlighting max point on graph
@@ -17,13 +18,20 @@ Before using app you need to install all the necessary drivers for your BladeRF2
 - Tx mode that allows you to transmit at sweep and classical modes
 
 ## Future updates
-- Waterfall mode
 - Faster algorithms
+- Button for waterfall mode
 
 ## Important!
 In wideband scanning it is possible that displayed spectrum  will have frequency shift compared to real signal (due to digital processing in SDR). To compensate that, there is calibration data in main.py (self.calibration_table) where you can add frequency shifts.
 
 
-![img_1.png](img_1.png)
-![img_2.png](img_2.png)
-![img.png](img.png)
+![img_3.png](img_3.png)
+FM-radio frequency
+
+
+![img_5.png](img_5.png)
+Wideband sweep
+
+
+![img_4.png](img_4.png)
+Tx window

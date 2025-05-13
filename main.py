@@ -38,7 +38,7 @@ class SpectrumAnalyzer(QMainWindow):
         self.NUM_SAMPLES = 32768
         self.GAIN = 18
         self.WINDOW_TYPE = 'hann'
-        self.StepsWaterfall = 50
+        self.StepsWaterfall = 20
 
         # --- Калибровочная таблица ---
         self.calibration_table = {
@@ -384,7 +384,7 @@ class SpectrumAnalyzer(QMainWindow):
             self.init_rx_sdr()
             print("RX parameters updated.")
 
-            self.waterfall_data = np.zeros((100, len(self.center_freqs) * self.NUM_SAMPLES))
+            self.waterfall_data = np.zeros((self.StepsWaterfall, len(self.center_freqs) * self.NUM_SAMPLES))
             self.waterfall_ptr = 0
 
             # Обновление подписей оси частоты после изменения частотных параметров
