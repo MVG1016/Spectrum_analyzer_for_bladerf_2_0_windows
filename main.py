@@ -150,6 +150,29 @@ class SpectrumAnalyzer(QMainWindow):
         self.init_rx_ui()
         self.init_tx_ui()
 
+    # def mouse_moved(self, pos):
+    #     # Преобразуем позицию курсора в координаты графика
+    #     mouse_point = self.graphWidget.plotItem.vb.mapSceneToView(pos)
+    #     x = mouse_point.x() * 1e6  # MHz -> Hz
+    #     y = mouse_point.y()
+    #
+    #     # Находим ближайшую точку данных
+    #     if len(self.full_freqs) > 0 and len(self.full_spectrum) > 0:
+    #         idx = np.argmin(np.abs(self.full_freqs / 1e6 - mouse_point.x()))
+    #         freq = self.full_freqs[idx] / 1e6
+    #         power = self.full_spectrum[idx]
+    #
+    #         # Обновляем текст метки
+    #         self.cursor_label.setHtml(
+    #             f"<div style='font-size: 12pt;'>"
+    #             f"<span style='color: yellow;'>Freq: {freq:.2f} MHz</span><br>"
+    #             f"<span style='color: cyan;'>Power: {power:.1f} dBm</span>"
+    #             f"</div>"
+    #         )
+    #
+    #         # Позиционируем метку рядом с курсором
+    #         self.cursor_label.setPos(mouse_point.x(), mouse_point.y())
+
 
     def init_rx_ui(self):
         layout = QVBoxLayout()
@@ -159,6 +182,10 @@ class SpectrumAnalyzer(QMainWindow):
         self.graphWidget.setLabel('bottom', 'Frequency (MHz)')
         self.graphWidget.setYRange(-120, 0)
         self.graphWidget.showGrid(x=True, y=True)
+
+        # self.cursor_label = pg.TextItem(anchor=(0, 0), color='w', fill=(0, 0, 0, 150))
+        # self.graphWidget.addItem(self.cursor_label)
+        # self.graphWidget.scene().sigMouseMoved.connect(self.mouse_moved)
 
 
         self.spectrum_curve = self.graphWidget.plot(pen='y')
@@ -391,6 +418,9 @@ class SpectrumAnalyzer(QMainWindow):
             #self.graphWidget.setLabel('bottom', 'Frequency (MHz)', units='MHz')
             self.graphWidget.setXRange(self.START_FREQ / 1e6, self.END_FREQ / 1e6)
             self.graphWidget.setXLink(self.graphWidget)  # Установить привязку оси X к обновлениям
+
+            self.waterfallWidget.setYRange(0, self.waterfall_data.shape[0], padding=0)
+            self.waterfallWidget.setXRange(*self.graphWidget.viewRange()[0])
 
         except Exception as e:
             print(f"Failed to apply RX settings: {e}")
