@@ -454,7 +454,7 @@ class SpectrumAnalyzer(QMainWindow):
         separator3.setFrameShadow(QFrame.Sunken)
         control_layout.addRow(separator3)
 
-        # IQ Save
+        #IQ Save
         control_layout.addRow(QLabel("<b>IQ Data Recording</b>"))
 
         self.iq_freq_edit = QLineEdit("2400")
