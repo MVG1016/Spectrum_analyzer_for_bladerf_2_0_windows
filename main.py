@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QWidget,
                              QPushButton, QHBoxLayout, QComboBox, QFormLayout,
                              QLineEdit, QLabel, QMessageBox, QSpinBox, QFrame,
-                             QSlider, QGroupBox, QFileDialog)
+                             QSlider, QGroupBox, QFileDialog, QScrollArea)
 from PyQt5.QtCore import QTimer, QLocale, QThread, QRectF, Qt
 from PyQt5.QtGui import QIcon
 import pyqtgraph as pg
@@ -892,9 +892,14 @@ class SpectrumAnalyzer(QMainWindow):
         self.iq_status_label = QLabel("Ready")
         control_layout.addRow("IQ Status:", self.iq_status_label)
 
-        main_layout.addWidget(control_panel, stretch=1)
+        # Wrap control panel in scroll area
+        scroll = QScrollArea()
+        scroll.setWidget(control_panel)
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
 
-        self._update_channel_visibility()
+        main_layout.addWidget(scroll, stretch=1)
 
     # =========================================================================
     # Device Management
